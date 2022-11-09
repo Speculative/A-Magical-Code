@@ -438,16 +438,17 @@ def dict_coders() -> tuple[Callable[[str], str], Callable[[str], str]]:
 # ==============
 # Bits <-> Cards
 # ==============
-def bottom_cards_encode(value: int, n: int) -> list[int]:
-    if value >= factorial(n):
-        raise ValueError(f"{value} is too large to encode in {n} cards!")
+def bottom_cards_encode(value: int, min_card: int, max_card: int) -> list[int]:
+    c = max_card - min_card + 1
+    if value >= factorial(c):
+        raise ValueError(f"{value} is too large to encode in {c} cards!")
 
     cards = []
     current_value = 0
-    digits = list(range(n))
-    for i in range(n):
+    digits = list(range(min_card, max_card + 1))
+    for i in range(c):
         # First n bins of (n-1)!, then n-1 bins of (n-2)!, and so on bin_width = factorial(n - i) // (n - i)
-        bin_width = factorial(n - i) // (n - i)
+        bin_width = factorial(c - i) // (c - i)
         # Target value falls into one of these bins
         bin_no = (value - current_value) // bin_width
         # Of the cards still available, ordered by value, select the bin_no'th largest
@@ -461,16 +462,17 @@ def bottom_cards_encode(value: int, n: int) -> list[int]:
     return cards
 
 
-def bottom_cards_decode(cards: list[int], n: int) -> int:
-    cards = [card for card in cards if card < n]
+def bottom_cards_decode(cards: list[int], min_card: int, max_card: int) -> int:
+    cards = [card for card in cards if min_card <= card <= max_card]
+    c = max_card - min_card + 1
     # Assuming the top card is the first card in the list
     lo = 0
-    hi = factorial(n)
-    digits = list(range(n))
-    for i in range(n):
+    hi = factorial(c)
+    digits = list(range(min_card, max_card + 1))
+    for i in range(c):
         card_value = cards[i]
         # Range will always be divisible by the place value
-        bin_width = (hi - lo) // (n - i)
+        bin_width = (hi - lo) // (c - i)
         bin_no = digits.index(card_value)
         lo = lo + bin_no * bin_width
         hi = lo + bin_width
@@ -580,8 +582,11 @@ def extract_bit_fields(bits: str, format: list[int]) -> list[str]:
     return fields
 
 
-def check_and_remove(bits: str) -> tuple[bool, int, str]:
+def check_and_remove(deck: list[int], c: int) -> tuple[bool, int, str]:
     """Returns `(passed_checksum, encoding_id, message)`"""
+    encoded = [card for card in deck if card < c]
+    bits = to_bit_string(bottom_cards_decode(encoded, 0, c - 1))
+
     message_checksum, length_byte, encoding_bits, message = extract_bit_fields(
         pad(bits, CHECKSUM_BITS + LENGTH_BITS + ENCODING_BITS, allow_over=True),
         [CHECKSUM_BITS, LENGTH_BITS, ENCODING_BITS],
@@ -604,6 +609,29 @@ def check_and_remove(bits: str) -> tuple[bool, int, str]:
     message = pad(message, message_length, allow_over=True)
     checked_bits = message + encoding_bits + length_byte
     checked_checksum = sha_checksum(checked_bits, CHECKSUM_BITS)
+
+    print("Recovered C:", c)
+    if not checked_checksum == message_checksum:
+        c_repetitions = max(
+            find_c_for_message(to_bit_string(pow(2, message_length))), 1
+        )
+        print("Recovered length:", length_byte)
+        print("Recovered c_rep:", c_repetitions)
+        for rep_start in range(c, 52, c_repetitions):
+            rep_end = rep_start + c_repetitions - 1
+            if rep_end > 51:
+                break
+            repetition_cards = [card for card in deck if rep_start <= card <= rep_end]
+            repetition = to_bit_string(
+                bottom_cards_decode(repetition_cards, rep_start, rep_end)
+            )
+            repetition = pad(repetition, message_length, allow_over=True)
+            checked_bits = repetition + encoding_bits + length_byte
+            checked_checksum = sha_checksum(checked_bits, CHECKSUM_BITS)
+            if checked_checksum == message_checksum:
+                print("Repetition helped?")
+                return True, encoding_id, repetition
+
     return checked_checksum == message_checksum, encoding_id, message
 
 
@@ -700,28 +728,44 @@ class Agent:
 
         c = find_c_for_message(with_checksum)
         try:
-            card_encoded = bottom_cards_encode(from_bit_string(with_checksum), c)
+            card_encoded = bottom_cards_encode(from_bit_string(with_checksum), 0, c - 1)
         except ValueError as e:
             # TODO: Lossy encoding when message length > available bits in card deck
             print(e)
             return list(range(52))
 
-        # Debugging
-        # print("Message:", encoded)
-        # print("Encoding:", encoding_bits)
-        # print("Length:", message_length)
-        # print("Checksum:", checksum)
-        # print("C:", c)
+        result = card_encoded
+        c_repetitions = find_c_for_message(to_bit_string(pow(2, len(encoded))))
+        for rep_start in range(c, 52, c_repetitions):
+            rep_end = rep_start + c_repetitions
+            if rep_end > 51:
+                break
+            repetition_encoded = bottom_cards_encode(
+                from_bit_string(encoded), rep_start, rep_start + c_repetitions - 1
+            )
+            result = repetition_encoded + result
 
-        return list(range(c, 52)) + card_encoded
+        # Pad out the remainder of the deck
+        result = list(range(len(result), 52)) + result
+
+        if len(result) != 52:
+            pdb.set_trace()
+
+        # Debugging
+        print("Message:", encoded)
+        print("Encoding:", encoding_bits)
+        print("Length:", message_length)
+        print("Checksum:", checksum)
+        print("C:", c)
+        print("C_rep:", c_repetitions)
+
+        return result
 
     def decode(self, deck: list[int]):
         # Minimum 16 bit suffix for checksum + length
         # log2(9!) > 2 ^ 16
         for c in range(9, 52):
-            encoded = [card for card in deck if card < c]
-            decoded = to_bit_string(bottom_cards_decode(encoded, c))
-            passes_checksum, encoding_id, message = check_and_remove(decoded)
+            passes_checksum, encoding_id, message = check_and_remove(deck, c)
             if passes_checksum:
                 self.total_decodes += 1
                 if encoding_id >= len(CHARACTER_ENCODINGS):
@@ -761,11 +805,11 @@ if __name__ == "__main__":
 
     for n in range(1, 52):
         assert (
-            bottom_cards_decode(bottom_cards_encode(factorial(n) - 1, n), n)
+            bottom_cards_decode(bottom_cards_encode(factorial(n) - 1, 0, 51), 0, 51)
             == factorial(n) - 1
         )
         assert (
-            bottom_cards_decode(bottom_cards_encode(factorial(n) // 2, n), n)
+            bottom_cards_decode(bottom_cards_encode(factorial(n) // 2, 0, 51), 0, 51)
             == factorial(n) // 2
         )
-        assert bottom_cards_decode(bottom_cards_encode(0, n), n) == 0
+        assert bottom_cards_decode(bottom_cards_encode(0, 0, 51), 0, 51) == 0
