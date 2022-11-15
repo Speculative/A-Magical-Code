@@ -133,7 +133,7 @@ plt.gca().legend()
 plt.savefig(path.join(PLOT_DIR, "per_group_per_domain.png"), dpi=300)
 
 for n in NS:
-    avg_per_group_domain_n = {
+    avg_per_group_per_domain = {
         group: {
             domain: per_group_domain_n[group][domain][n][1]
             / max(per_group_domain_n[group][domain][n][0], 1)
@@ -149,7 +149,7 @@ for n in NS:
         width = 0.1
         bars = plt.bar(
             x - (width * num_bars) / 2 + (group * width),
-            [avg_per_group_domain_n[group][domain] for domain in DOMAINS],
+            [avg_per_group_per_domain[group][domain] for domain in DOMAINS],
             width,
             label=f"G{group}",
         )
@@ -159,3 +159,31 @@ for n in NS:
     plt.gca().set_xlabel("Domain")
     plt.gca().legend()
     plt.savefig(path.join(PLOT_DIR, f"per_group_per_domain_n={n}.png"), dpi=300)
+
+for domain in DOMAINS:
+    avg_per_group_per_n = {
+        group: {
+            n: per_group_domain_n[group][domain][n][1]
+            / max(per_group_domain_n[group][domain][n][0], 1)
+            for n in NS
+        }
+        for group in GROUPS
+    }
+    plt.clf()
+    for group in GROUPS:
+        num_bar_groups = len(NS)
+        num_bars = len(GROUPS)
+        x = np.arange(num_bar_groups)
+        width = 0.1
+        bars = plt.bar(
+            x - (width * num_bars) / 2 + (group * width),
+            [avg_per_group_per_n[group][n] for n in NS],
+            width,
+            label=f"G{group}",
+        )
+    plt.title(f"Average Score Per-Group Per-n (domain={domain})")
+    plt.gca().set_ylabel("Average Score")
+    plt.gca().set_xticks(x, NS)
+    plt.gca().set_xlabel("n")
+    plt.gca().legend()
+    plt.savefig(path.join(PLOT_DIR, f"per_group_per_n_domain={domain}.png"), dpi=300)
