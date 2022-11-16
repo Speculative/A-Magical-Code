@@ -187,3 +187,29 @@ for domain in DOMAINS:
     plt.gca().set_xlabel("n")
     plt.gca().legend()
     plt.savefig(path.join(PLOT_DIR, f"per_group_per_n_domain={domain}.png"), dpi=300)
+
+total_per_group_domain = {
+    group: {
+        domain: sum(per_group_domain_n[group][domain][n][0] for n in NS)
+        for domain in DOMAINS
+    }
+    for group in GROUPS
+}
+plt.clf()
+for group in GROUPS:
+    num_bar_groups = len(DOMAINS)
+    num_bars = len(GROUPS)
+    x = np.arange(num_bar_groups)
+    width = 0.1
+    bars = plt.bar(
+        x - (width * num_bars) / 2 + (group * width),
+        [total_per_group_domain[group][domain] for domain in DOMAINS],
+        width,
+        label=f"G{group}",
+    )
+plt.title(f"Total results Per-Group Per-Domain")
+plt.gca().set_ylabel("Total results")
+plt.gca().set_xticks(x, DOMAINS)
+plt.gca().set_xlabel("Domain")
+plt.gca().legend()
+plt.savefig(path.join(PLOT_DIR, "group_domain_result_counts.png"), dpi=300)

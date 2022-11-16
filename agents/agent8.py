@@ -6,7 +6,6 @@ import re
 from decimal import Decimal
 from enum import Enum
 from math import ceil, factorial, log2
-from operator import indexOf
 from pprint import pprint
 from random import Random
 from string import ascii_letters, digits, punctuation, ascii_uppercase, whitespace
@@ -525,9 +524,9 @@ def flight_coders():
     res_domain = ascii_uppercase + digits
     res_char_length = int(ceil(log2(len(res_domain))))
 
-    month_domain = list(map(str, range(1, 13)))
+    month_domain = list(map(lambda m: str(m).zfill(2), range(1, 13)))
     month_length = 4
-    day_domain = list(map(str, range(1, 29)))
+    day_domain = list(map(lambda d: str(d).zfill(2), range(1, 29)))
     day_length = 5
     year_domain = list(map(str, range(2023, 2026)))
     year_length = 3
@@ -559,6 +558,8 @@ def flight_coders():
         )
 
         encoded = airport_bits + res_bits + month_bits + day_bits + year_bits
+
+        print("Encoded length", len(encoded))
 
         return encoded
 
